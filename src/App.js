@@ -1,0 +1,452 @@
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabase';
+import './App.css';
+
+const CATEGORIES = ['All', 'Roofing', 'Landscaping', 'Concrete', 'Fencing', 'Flooring', 'Carpentry', 'Plumbing', 'Electrical'];
+
+export default function App() {
+  const [jobs, setJobs] = useState([]);
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [showBidModal, setShowBidModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [bidForm, setBidForm] = useState({ amount: '', message: '' });
+  const [bidSuccess, setBidSuccess] = useState(false);
+  const [form, setForm] = useState({ title: '', category: '', description: '', price: '', location: '' });
+  const [authForm, setAuthForm] = useState({ email: '', password: '' });
+  const [user, setUser] = useState(null);
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [conversations, setConversations] = useState([]);
+  const [activeConversation, setActiveConversation] = useState(null);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    fetchJobs();
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchConversations();
+  }, [user]);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  async function fetchJobs() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
+    if (!error) setJobs(data);
+    setLoading(false);
+  }
+
+  async function fetchConversations() {
+    const { data } = await supabase
+      .from('messages')
+      .select('job_id, sender_id, receiver_id')
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+    if (data) {
+      const unique = [...new Map(data.map(m => [m.job_id, m])).values()];
+      setConversations(unique);
+    }
+  }
+
+  async function fetchMessages(jobId, otherId) {
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('job_id', jobId)
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .order('created_at', { ascending: true });
+    if (data) setMessages(data);
+  }
+
+  async function sendMessage() {
+    if (!newMessage.trim() || !activeConversation) return;
+    await supabase.from('messages').insert({
+      job_id: activeConversation.job_id,
+      sender_id: user.id,
+      receiver_id: activeConversation.other_id,
+      content: newMessage.trim(),
+    });
+    setNewMessage('');
+    fetchMessages(activeConversation.job_id, activeConversation.other_id);
+  }
+
+  const filtered = activeCategory === 'All' ? jobs : jobs.filter(j => j.category === activeCategory);
+
+  async function handleAuth() {
+    setAuthError('');
+    setAuthLoading(true);
+    if (authMode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email: authForm.email, password: authForm.password });
+      if (error) setAuthError(error.message);
+      else setShowAuthModal(false);
+    } else {
+      const { error } = await supabase.auth.signUp({ email: authForm.email, password: authForm.password });
+      if (error) setAuthError(error.message);
+      else setAuthError('Check your email to confirm your account!');
+    }
+    setAuthLoading(false);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+  }
+
+  function handleImageChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+
+  async function handlePost() {
+    if (!form.title || !form.price) return;
+    let imageUrl = null;
+    if (imageFile) {
+      const fileName = `${Date.now()}-${imageFile.name}`;
+      const { error } = await supabase.storage.from('job-images').upload(fileName, imageFile);
+      if (!error) {
+        const { data } = supabase.storage.from('job-images').getPublicUrl(fileName);
+        imageUrl = data.publicUrl;
+      }
+    }
+    const { error } = await supabase.from('jobs').insert({
+      title: form.title,
+      category: form.category || 'General',
+      description: form.description,
+      price: Number(form.price),
+      emoji: '📋',
+      image_url: imageUrl,
+      location: form.location || 'Your Area',
+      user_id: user?.id,
+      bids: 0,
+    });
+    if (!error) {
+      fetchJobs();
+      setShowPostModal(false);
+      setImageFile(null);
+      setImagePreview(null);
+      setForm({ title: '', category: '', description: '', price: '', location: '' });
+    }
+  }
+
+  function openBidModal(job) {
+    if (!user) { setShowAuthModal(true); setAuthMode('login'); return; }
+    setSelectedJob(job);
+    setBidForm({ amount: '', message: '' });
+    setBidSuccess(false);
+    setShowBidModal(true);
+  }
+
+async function handleBid() {
+    if (!bidForm.amount || !user) return;
+    
+    // Save the bid to the bids table
+    const { error: bidError } = await supabase.from('bids').insert({
+      job_id: selectedJob.id,
+      bidder_id: user.id,
+      amount: Number(bidForm.amount),
+      message: bidForm.message || '',
+    });
+    
+    if (bidError) {
+      console.error('Bid failed:', bidError);
+      return;
+    }
+    
+    // Increment the bid count on the job
+    await supabase.from('jobs').update({ bids: selectedJob.bids + 1 }).eq('id', selectedJob.id);
+    
+    // Start a conversation with the job poster
+    const conv = { job_id: selectedJob.id, other_id: selectedJob.user_id };
+    setActiveConversation(conv);
+    fetchMessages(selectedJob.id, selectedJob.user_id);
+    fetchJobs();
+    setBidSuccess(true);
+}
+
+  function openMessages(job, otherId) {
+    if (!user) { setShowAuthModal(true); return; }
+    const conv = { job_id: job.id, other_id: otherId };
+    setActiveConversation(conv);
+    setSelectedJob(job);
+    fetchMessages(job.id, otherId);
+    setShowMessageModal(true);
+  }
+
+  return (
+    <>
+      <nav>
+        <div className="logo">JobHub</div>
+        <div className="nav-right">
+          {user ? (
+            <>
+              <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{user.email}</span>
+              <button className="btn-secondary" onClick={() => { fetchConversations(); setShowMessageModal(true); }}>💬 Messages</button>
+              <button className="btn-secondary" onClick={handleLogout}>Log Out</button>
+            </>
+          ) : (
+            <button className="btn-secondary" onClick={() => { setShowAuthModal(true); setAuthMode('login'); }}>Log In</button>
+          )}
+          <button className="btn-post" onClick={() => user ? setShowPostModal(true) : setShowAuthModal(true)}>+ Post a Job</button>
+        </div>
+      </nav>
+
+      <div className="hero">
+        <h1>FIND LOCAL<br /><span>CONTRACTORS</span></h1>
+        <p>Post any home job, get bids from local pros, and get it done.</p>
+        <button className="btn-post" onClick={() => user ? setShowPostModal(true) : setShowAuthModal(true)}>Post Your First Job →</button>
+      </div>
+
+      <div className="filters">
+        {CATEGORIES.map(cat => (
+          <button key={cat} className={`filter-btn ${activeCategory === cat ? 'active' : ''}`} onClick={() => setActiveCategory(cat)}>{cat}</button>
+        ))}
+      </div>
+
+      <div className="jobs-grid">
+        {loading ? (
+          <p style={{ color: 'var(--muted)', gridColumn: '1/-1', textAlign: 'center', padding: '3rem' }}>Loading jobs...</p>
+        ) : filtered.length === 0 ? (
+          <p style={{ color: 'var(--muted)', gridColumn: '1/-1', textAlign: 'center', padding: '3rem' }}>No jobs posted yet — be the first!</p>
+        ) : (
+          filtered.map(job => (
+            <div key={job.id} className="job-card">
+              <div className="job-card-img">
+                {job.image_url ? (
+                  <img src={job.image_url} alt={job.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (job.emoji || '📋')}
+              </div>
+              <div className="job-card-body">
+                <div className="job-category">{job.category}</div>
+                <div className="job-title">{job.title}</div>
+                <div className="job-meta">📍 {job.location} · {job.bids} bids</div>
+                <div className="job-desc">{job.description}</div>
+                <div className="job-card-footer">
+                  <div className="job-price">${Number(job.price).toLocaleString()}</div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {user && job.user_id === user.id ? (
+                      <button className="bid-btn" onClick={() => openMessages(job, job.user_id)}>💬 Messages</button>
+                    ) : (
+                      <button className="bid-btn" onClick={() => openBidModal(job)}>Place Bid</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* AUTH MODAL */}
+      {showAuthModal && (
+        <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>{authMode === 'login' ? 'Log In' : 'Sign Up'}</h2>
+            <div className="form-group">
+              <label>Email</label>
+              <input type="email" placeholder="you@example.com" value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Password</label>
+              <input type="password" placeholder="••••••••" value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} />
+            </div>
+            {authError && <p style={{ color: authError.includes('Check') ? 'var(--accent)' : '#ff6b6b', fontSize: '0.85rem', marginBottom: '1rem' }}>{authError}</p>}
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setShowAuthModal(false)}>Cancel</button>
+              <button className="btn-post" onClick={handleAuth} disabled={authLoading}>
+                {authLoading ? 'Loading...' : authMode === 'login' ? 'Log In' : 'Sign Up'}
+              </button>
+            </div>
+            <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
+              {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
+              <span style={{ color: 'var(--accent)', cursor: 'pointer' }} onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }}>
+                {authMode === 'login' ? 'Sign Up' : 'Log In'}
+              </span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* POST A JOB MODAL */}
+      {showPostModal && (
+        <div className="modal-overlay" onClick={() => setShowPostModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>Post a Job</h2>
+            <div className="form-group">
+              <label>Job Title</label>
+              <input placeholder="e.g. Broken gutter needs repair" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Category</label>
+              <select value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                <option value="">Select a category</option>
+                {CATEGORIES.slice(1).map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <textarea placeholder="Describe what needs to be done..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Photo</label>
+              {imagePreview ? (
+                <div style={{ position: 'relative' }}>
+                  <img src={imagePreview} alt="preview" style={{ width: '100%', borderRadius: '10px', maxHeight: '200px', objectFit: 'cover' }} />
+                  <button onClick={() => { setImageFile(null); setImagePreview(null); }} style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '1rem' }}>×</button>
+                </div>
+              ) : (
+                <label className="upload-area" style={{ display: 'block', cursor: 'pointer' }}>
+                  📷<p>Click to upload a photo of the job</p>
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageChange} />
+                </label>
+              )}
+            </div>
+            <div className="form-group">
+              <label>Your Budget ($)</label>
+              <input type="number" placeholder="e.g. 500" value={form.price} onChange={e => setForm({...form, price: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Location</label>
+              <input placeholder="e.g. Salt Lake City, UT" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
+            </div>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setShowPostModal(false)}>Cancel</button>
+              <button className="btn-post" onClick={handlePost}>Post Job</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BID MODAL */}
+      {showBidModal && selectedJob && (
+        <div className="modal-overlay" onClick={() => setShowBidModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            {bidSuccess ? (
+              <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
+                <h2>Bid Placed!</h2>
+                <p style={{ color: 'var(--muted)', margin: '1rem 0 2rem' }}>
+                  Your bid of <strong style={{ color: 'var(--accent)' }}>${Number(bidForm.amount).toLocaleString()}</strong> has been submitted for <strong>{selectedJob.title}</strong>.
+                </p>
+                <button className="btn-post" style={{ width: '100%', marginBottom: '0.75rem' }} onClick={() => { setShowBidModal(false); openMessages(selectedJob, selectedJob.user_id); }}>
+                  💬 Message Homeowner
+                </button>
+                <button className="btn-secondary" style={{ width: '100%' }} onClick={() => setShowBidModal(false)}>Done</button>
+              </div>
+            ) : (
+              <>
+                <h2>Place a Bid</h2>
+                <div style={{ background: 'var(--card)', borderRadius: '12px', padding: '1rem', marginBottom: '1.5rem' }}>
+                  <div className="job-category">{selectedJob.category}</div>
+                  <div className="job-title">{selectedJob.title}</div>
+                  <div className="job-meta">📍 {selectedJob.location}</div>
+                  <div style={{ marginTop: '0.5rem', color: 'var(--muted)', fontSize: '0.75rem' }}>
+                    Homeowner's budget: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>${Number(selectedJob.price).toLocaleString()}</span>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Your Bid Amount ($)</label>
+                  <input type="number" placeholder="e.g. 120" value={bidForm.amount} onChange={e => setBidForm({...bidForm, amount: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label>Message to Homeowner</label>
+                  <textarea placeholder="Introduce yourself and explain why you're the right person for this job..." value={bidForm.message} onChange={e => setBidForm({...bidForm, message: e.target.value})} />
+                </div>
+                <div className="modal-actions">
+                  <button className="btn-secondary" onClick={() => setShowBidModal(false)}>Cancel</button>
+                  <button className="btn-post" onClick={handleBid}>Submit Bid</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MESSAGE MODAL */}
+      {showMessageModal && (
+        <div className="modal-overlay" onClick={() => setShowMessageModal(false)}>
+          <div className="modal" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <h2>💬 Messages</h2>
+            {!activeConversation ? (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {conversations.length === 0 ? (
+                  <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>No messages yet. Place a bid to start a conversation!</p>
+                ) : (
+                  conversations.map((conv, i) => {
+                    const job = jobs.find(j => j.id === conv.job_id);
+                    return (
+                      <div key={i} onClick={() => { setActiveConversation({ job_id: conv.job_id, other_id: conv.sender_id === user.id ? conv.receiver_id : conv.sender_id }); fetchMessages(conv.job_id); }}
+                        style={{ padding: '1rem', borderRadius: '10px', background: 'var(--card)', marginBottom: '0.75rem', cursor: 'pointer', border: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 600 }}>{job?.title || 'Job'}</div>
+                        <div style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>Tap to view conversation</div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <>
+                <button onClick={() => setActiveConversation(null)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', textAlign: 'left', marginBottom: '1rem', fontSize: '0.85rem' }}>← Back to conversations</button>
+                <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {messages.length === 0 ? (
+                    <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>No messages yet — say hello!</p>
+                  ) : (
+                    messages.map(msg => (
+                      <div key={msg.id} style={{
+                        alignSelf: msg.sender_id === user.id ? 'flex-end' : 'flex-start',
+                        background: msg.sender_id === user.id ? 'var(--accent)' : 'var(--card)',
+                        color: msg.sender_id === user.id ? '#fff' : 'var(--text)',
+                        padding: '0.6rem 1rem',
+                        borderRadius: '12px',
+                        maxWidth: '75%',
+                        fontSize: '0.9rem',
+                      }}>
+                        {msg.content}
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    style={{ flex: 1, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '0.75rem', borderRadius: '10px', fontFamily: 'DM Sans, sans-serif' }}
+                    placeholder="Type a message..."
+                    value={newMessage}
+                    onChange={e => setNewMessage(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                  />
+                  <button className="btn-post" onClick={sendMessage}>Send</button>
+                </div>
+              </>
+            )}
+            <button className="btn-secondary" style={{ marginTop: '1rem' }} onClick={() => setShowMessageModal(false)}>Close</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

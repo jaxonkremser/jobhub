@@ -17,8 +17,9 @@ export default function App() {
   const [bidForm, setBidForm] = useState({ amount: '', message: '' });
   const [bidSuccess, setBidSuccess] = useState(false);
   const [form, setForm] = useState({ title: '', category: '', description: '', price: '', location: '' });
-  const [authForm, setAuthForm] = useState({ email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' });
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [imageFiles, setImageFiles] = useState([]);
@@ -34,9 +35,11 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      if (session?.user) fetchProfile(session.user.id);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (session?.user) fetchProfile(session.user.id);
     });
     fetchJobs();
     return () => subscription.unsubscribe();
@@ -51,6 +54,11 @@ export default function App() {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  async function fetchProfile(userId) {
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (data) setProfile(data);
+  }
 
   async function fetchJobs() {
     setLoading(true);
@@ -106,15 +114,21 @@ export default function App() {
       if (error) setAuthError(error.message);
       else setShowAuthModal(false);
     } else {
-      const { error } = await supabase.auth.signUp({ email: authForm.email, password: authForm.password });
-      if (error) setAuthError(error.message);
-      else setAuthError('Check your email to confirm your account!');
+      const { data, error } = await supabase.auth.signUp({ email: authForm.email, password: authForm.password });
+      if (error) { setAuthError(error.message); }
+      else {
+        if (authForm.name && data.user) {
+          await supabase.from('profiles').upsert({ id: data.user.id, name: authForm.name });
+        }
+        setAuthError('Check your email to confirm your account!');
+      }
     }
     setAuthLoading(false);
   }
 
   async function handleLogout() {
     await supabase.auth.signOut();
+    setProfile(null);
   }
 
   function handleImageChange(e) {
@@ -132,7 +146,6 @@ export default function App() {
   async function handlePost() {
     if (!form.title || !form.price) return;
     let imageUrls = [];
-
     for (const file of imageFiles) {
       const fileName = `${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from('job-images').upload(fileName, file);
@@ -141,7 +154,6 @@ export default function App() {
         imageUrls.push(data.publicUrl);
       }
     }
-
     const { error } = await supabase.from('jobs').insert({
       title: form.title,
       category: form.category || 'General',
@@ -152,9 +164,9 @@ export default function App() {
       image_urls: imageUrls,
       location: form.location || 'Your Area',
       user_id: user?.id,
+      poster_name: profile?.name || null,
       bids: 0,
     });
-
     if (!error) {
       fetchJobs();
       setShowPostModal(false);
@@ -211,7 +223,7 @@ export default function App() {
         <div className="nav-right">
           {user ? (
             <>
-              <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{user.email}</span>
+              <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{profile?.name || user.email}</span>
               <button className="btn-secondary" onClick={() => { fetchConversations(); setShowMessageModal(true); }}>💬 Messages</button>
               <button className="btn-secondary" onClick={handleLogout}>Log Out</button>
             </>
@@ -250,8 +262,8 @@ export default function App() {
               <div className="job-card-body">
                 <div className="job-category">{job.category}</div>
                 <div className="job-title">{job.title}</div>
-                <div className="job-meta">📍 {job.location} · {job.bids} bids</div>
-                <div className="job-desc">{job.description}</div>
+                <div className="job-meta">📍 {job.location} · {job.bids} bids {job.poster_name && `· Posted by ${job.poster_name}`}</div>
+                <div className="job-desc" style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>{job.description}</div>
                 <div className="job-card-footer">
                   <div className="job-price">${Number(job.price).toLocaleString()}</div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -272,28 +284,14 @@ export default function App() {
       {showJobModal && selectedJob && (
         <div className="modal-overlay" onClick={() => setShowJobModal(false)}>
           <div className="modal" style={{ maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            {/* Image Gallery */}
             {selectedJob.image_urls && selectedJob.image_urls.length > 0 ? (
               <div style={{ marginBottom: '1.5rem' }}>
-                <img
-                  src={selectedJob.image_urls[activeImageIndex]}
-                  alt={selectedJob.title}
-                  style={{ width: '100%', height: '280px', objectFit: 'cover', borderRadius: '12px' }}
-                />
+                <img src={selectedJob.image_urls[activeImageIndex]} alt={selectedJob.title} style={{ width: '100%', height: '280px', objectFit: 'cover', borderRadius: '12px' }} />
                 {selectedJob.image_urls.length > 1 && (
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', overflowX: 'auto' }}>
                     {selectedJob.image_urls.map((url, i) => (
-                      <img
-                        key={i}
-                        src={url}
-                        alt={`view ${i + 1}`}
-                        onClick={() => setActiveImageIndex(i)}
-                        style={{
-                          width: '70px', height: '70px', objectFit: 'cover', borderRadius: '8px',
-                          cursor: 'pointer', border: i === activeImageIndex ? '2px solid var(--accent)' : '2px solid transparent',
-                          flexShrink: 0
-                        }}
-                      />
+                      <img key={i} src={url} alt={`view ${i + 1}`} onClick={() => setActiveImageIndex(i)}
+                        style={{ width: '70px', height: '70px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: i === activeImageIndex ? '2px solid var(--accent)' : '2px solid transparent', flexShrink: 0 }} />
                     ))}
                   </div>
                 )}
@@ -303,13 +301,13 @@ export default function App() {
                 {selectedJob.emoji || '📋'}
               </div>
             )}
-
             <div className="job-category">{selectedJob.category}</div>
             <h2 style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '1.4rem', margin: '0.5rem 0' }}>{selectedJob.title}</h2>
-            <div className="job-meta" style={{ marginBottom: '1rem' }}>📍 {selectedJob.location} · {selectedJob.bids} bids</div>
-
+            <div className="job-meta" style={{ marginBottom: '1rem' }}>
+              📍 {selectedJob.location} · {selectedJob.bids} bids
+              {selectedJob.poster_name && <span> · Posted by <strong>{selectedJob.poster_name}</strong></span>}
+            </div>
             <div style={{ color: 'var(--text)', lineHeight: '1.7', marginBottom: '1.5rem' }}>{selectedJob.description}</div>
-
             <div style={{ background: 'var(--card)', borderRadius: '12px', padding: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.25rem' }}>BUDGET</div>
@@ -320,7 +318,6 @@ export default function App() {
                 <div style={{ fontSize: '0.9rem' }}>{new Date(selectedJob.expires_at).toLocaleDateString()}</div>
               </div>
             </div>
-
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               {user && selectedJob.user_id === user.id ? (
                 <button className="btn-post" style={{ flex: 1 }} onClick={() => { setShowJobModal(false); openMessages(selectedJob, selectedJob.user_id); }}>💬 View Messages</button>
@@ -338,6 +335,12 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2>{authMode === 'login' ? 'Log In' : 'Sign Up'}</h2>
+            {authMode === 'signup' && (
+              <div className="form-group">
+                <label>Name <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span></label>
+                <input type="text" placeholder="e.g. John Smith" value={authForm.name} onChange={e => setAuthForm({...authForm, name: e.target.value})} />
+              </div>
+            )}
             <div className="form-group">
               <label>Email</label>
               <input type="email" placeholder="you@example.com" value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} />

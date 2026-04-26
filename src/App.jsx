@@ -200,7 +200,7 @@ async function handleBid() {
   return (
     <>
       <nav>
-        <div className="logo">JobHub</div>
+        <div className="logo" onClick={() => { setActiveCategory('All'); window.scrollTo(0, 0); }} style={{ cursor: 'pointer' }}>JobHub</div>
         <div className="nav-right">
           {user ? (
             <>

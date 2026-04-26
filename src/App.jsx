@@ -11,6 +11,7 @@ export default function App() {
   const [showBidModal, setShowBidModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
+  const [showJobModal, setShowJobModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [selectedJob, setSelectedJob] = useState(null);
   const [bidForm, setBidForm] = useState({ amount: '', message: '' });
@@ -20,13 +21,14 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function App() {
     }
   }
 
-  async function fetchMessages(jobId, otherId) {
+  async function fetchMessages(jobId) {
     const { data } = await supabase
       .from('messages')
       .select('*')
@@ -91,7 +93,7 @@ export default function App() {
       content: newMessage.trim(),
     });
     setNewMessage('');
-    fetchMessages(activeConversation.job_id, activeConversation.other_id);
+    fetchMessages(activeConversation.job_id);
   }
 
   const filtered = activeCategory === 'All' ? jobs : jobs.filter(j => j.category === activeCategory);
@@ -116,41 +118,56 @@ export default function App() {
   }
 
   function handleImageChange(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    const files = Array.from(e.target.files);
+    const newPreviews = files.map(f => URL.createObjectURL(f));
+    setImageFiles(prev => [...prev, ...files]);
+    setImagePreviews(prev => [...prev, ...newPreviews]);
+  }
+
+  function removeImage(index) {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
   }
 
   async function handlePost() {
     if (!form.title || !form.price) return;
-    let imageUrl = null;
-    if (imageFile) {
-      const fileName = `${Date.now()}-${imageFile.name}`;
-      const { error } = await supabase.storage.from('job-images').upload(fileName, imageFile);
+    let imageUrls = [];
+
+    for (const file of imageFiles) {
+      const fileName = `${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from('job-images').upload(fileName, file);
       if (!error) {
         const { data } = supabase.storage.from('job-images').getPublicUrl(fileName);
-        imageUrl = data.publicUrl;
+        imageUrls.push(data.publicUrl);
       }
     }
+
     const { error } = await supabase.from('jobs').insert({
       title: form.title,
       category: form.category || 'General',
       description: form.description,
       price: Number(form.price),
       emoji: '📋',
-      image_url: imageUrl,
+      image_url: imageUrls[0] || null,
+      image_urls: imageUrls,
       location: form.location || 'Your Area',
       user_id: user?.id,
       bids: 0,
     });
+
     if (!error) {
       fetchJobs();
       setShowPostModal(false);
-      setImageFile(null);
-      setImagePreview(null);
+      setImageFiles([]);
+      setImagePreviews([]);
       setForm({ title: '', category: '', description: '', price: '', location: '' });
     }
+  }
+
+  function openJobModal(job) {
+    setSelectedJob(job);
+    setActiveImageIndex(0);
+    setShowJobModal(true);
   }
 
   function openBidModal(job) {
@@ -161,39 +178,29 @@ export default function App() {
     setShowBidModal(true);
   }
 
-async function handleBid() {
+  async function handleBid() {
     if (!bidForm.amount || !user) return;
-    
-    // Save the bid to the bids table
     const { error: bidError } = await supabase.from('bids').insert({
       job_id: selectedJob.id,
       bidder_id: user.id,
       amount: Number(bidForm.amount),
       message: bidForm.message || '',
     });
-    
-    if (bidError) {
-      console.error('Bid failed:', bidError);
-      return;
-    }
-    
-    // Increment the bid count on the job
+    if (bidError) { console.error('Bid failed:', bidError); return; }
     await supabase.from('jobs').update({ bids: selectedJob.bids + 1 }).eq('id', selectedJob.id);
-    
-    // Start a conversation with the job poster
     const conv = { job_id: selectedJob.id, other_id: selectedJob.user_id };
     setActiveConversation(conv);
-    fetchMessages(selectedJob.id, selectedJob.user_id);
+    fetchMessages(selectedJob.id);
     fetchJobs();
     setBidSuccess(true);
-}
+  }
 
   function openMessages(job, otherId) {
     if (!user) { setShowAuthModal(true); return; }
     const conv = { job_id: job.id, other_id: otherId };
     setActiveConversation(conv);
     setSelectedJob(job);
-    fetchMessages(job.id, otherId);
+    fetchMessages(job.id);
     setShowMessageModal(true);
   }
 
@@ -234,7 +241,7 @@ async function handleBid() {
           <p style={{ color: 'var(--muted)', gridColumn: '1/-1', textAlign: 'center', padding: '3rem' }}>No jobs posted yet — be the first!</p>
         ) : (
           filtered.map(job => (
-            <div key={job.id} className="job-card">
+            <div key={job.id} className="job-card" onClick={() => openJobModal(job)}>
               <div className="job-card-img">
                 {job.image_url ? (
                   <img src={job.image_url} alt={job.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -249,9 +256,9 @@ async function handleBid() {
                   <div className="job-price">${Number(job.price).toLocaleString()}</div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     {user && job.user_id === user.id ? (
-                      <button className="bid-btn" onClick={() => openMessages(job, job.user_id)}>💬 Messages</button>
+                      <button className="bid-btn" onClick={e => { e.stopPropagation(); openMessages(job, job.user_id); }}>💬 Messages</button>
                     ) : (
-                      <button className="bid-btn" onClick={() => openBidModal(job)}>Place Bid</button>
+                      <button className="bid-btn" onClick={e => { e.stopPropagation(); openBidModal(job); }}>Place Bid</button>
                     )}
                   </div>
                 </div>
@@ -260,6 +267,71 @@ async function handleBid() {
           ))
         )}
       </div>
+
+      {/* JOB DETAIL MODAL */}
+      {showJobModal && selectedJob && (
+        <div className="modal-overlay" onClick={() => setShowJobModal(false)}>
+          <div className="modal" style={{ maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            {/* Image Gallery */}
+            {selectedJob.image_urls && selectedJob.image_urls.length > 0 ? (
+              <div style={{ marginBottom: '1.5rem' }}>
+                <img
+                  src={selectedJob.image_urls[activeImageIndex]}
+                  alt={selectedJob.title}
+                  style={{ width: '100%', height: '280px', objectFit: 'cover', borderRadius: '12px' }}
+                />
+                {selectedJob.image_urls.length > 1 && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', overflowX: 'auto' }}>
+                    {selectedJob.image_urls.map((url, i) => (
+                      <img
+                        key={i}
+                        src={url}
+                        alt={`view ${i + 1}`}
+                        onClick={() => setActiveImageIndex(i)}
+                        style={{
+                          width: '70px', height: '70px', objectFit: 'cover', borderRadius: '8px',
+                          cursor: 'pointer', border: i === activeImageIndex ? '2px solid var(--accent)' : '2px solid transparent',
+                          flexShrink: 0
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ width: '100%', height: '200px', background: 'var(--card)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '4rem', marginBottom: '1.5rem' }}>
+                {selectedJob.emoji || '📋'}
+              </div>
+            )}
+
+            <div className="job-category">{selectedJob.category}</div>
+            <h2 style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '1.4rem', margin: '0.5rem 0' }}>{selectedJob.title}</h2>
+            <div className="job-meta" style={{ marginBottom: '1rem' }}>📍 {selectedJob.location} · {selectedJob.bids} bids</div>
+
+            <div style={{ color: 'var(--text)', lineHeight: '1.7', marginBottom: '1.5rem' }}>{selectedJob.description}</div>
+
+            <div style={{ background: 'var(--card)', borderRadius: '12px', padding: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.25rem' }}>BUDGET</div>
+                <div style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: '2rem', color: 'var(--accent)' }}>${Number(selectedJob.price).toLocaleString()}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.25rem' }}>EXPIRES</div>
+                <div style={{ fontSize: '0.9rem' }}>{new Date(selectedJob.expires_at).toLocaleDateString()}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              {user && selectedJob.user_id === user.id ? (
+                <button className="btn-post" style={{ flex: 1 }} onClick={() => { setShowJobModal(false); openMessages(selectedJob, selectedJob.user_id); }}>💬 View Messages</button>
+              ) : (
+                <button className="btn-post" style={{ flex: 1 }} onClick={() => { setShowJobModal(false); openBidModal(selectedJob); }}>Place Bid</button>
+              )}
+              <button className="btn-secondary" onClick={() => setShowJobModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AUTH MODAL */}
       {showAuthModal && (
@@ -312,18 +384,21 @@ async function handleBid() {
               <textarea placeholder="Describe what needs to be done..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
             </div>
             <div className="form-group">
-              <label>Photo</label>
-              {imagePreview ? (
-                <div style={{ position: 'relative' }}>
-                  <img src={imagePreview} alt="preview" style={{ width: '100%', borderRadius: '10px', maxHeight: '200px', objectFit: 'cover' }} />
-                  <button onClick={() => { setImageFile(null); setImagePreview(null); }} style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '1rem' }}>×</button>
+              <label>Photos</label>
+              {imagePreviews.length > 0 && (
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {imagePreviews.map((src, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <img src={src} alt={`preview ${i}`} style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
+                      <button onClick={() => removeImage(i)} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#ff6b6b', border: 'none', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <label className="upload-area" style={{ display: 'block', cursor: 'pointer' }}>
-                  📷<p>Click to upload a photo of the job</p>
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageChange} />
-                </label>
               )}
+              <label className="upload-area" style={{ display: 'block', cursor: 'pointer' }}>
+                📷<p>Click to add photos (multiple allowed)</p>
+                <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImageChange} />
+              </label>
             </div>
             <div className="form-group">
               <label>Your Budget ($)</label>

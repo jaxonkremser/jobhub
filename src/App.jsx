@@ -25,6 +25,7 @@ export default function App() {
   const [imageFiles, setImageFiles] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [conversations, setConversations] = useState([]);
@@ -158,8 +159,39 @@ const filtered = jobs
   }
 
   async function handlePost() {
-    if (!form.title || !form.price) return;
-    let imageUrls = [];
+  if (!form.title || !form.price) return;
+  setPosting(true);
+  let imageUrls = [];
+  for (const file of imageFiles) {
+    const fileName = `${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from('job-images').upload(fileName, file);
+    if (!error) {
+      const { data } = supabase.storage.from('job-images').getPublicUrl(fileName);
+      imageUrls.push(data.publicUrl);
+    }
+  }
+  const { error } = await supabase.from('jobs').insert({
+    title: form.title,
+    category: form.category || 'General',
+    description: form.description,
+    price: Number(form.price),
+    emoji: '📋',
+    image_url: imageUrls[0] || null,
+    image_urls: imageUrls,
+    location: form.location || 'Your Area',
+    user_id: user?.id,
+    poster_name: profile?.name || null,
+    bids: 0,
+  });
+  if (!error) {
+    fetchJobs();
+    setShowPostModal(false);
+    setImageFiles([]);
+    setImagePreviews([]);
+    setForm({ title: '', category: '', description: '', price: '', location: '' });
+  }
+  setPosting(false);
+}
     for (const file of imageFiles) {
       const fileName = `${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from('job-images').upload(fileName, file);
@@ -480,7 +512,17 @@ const filtered = jobs
 </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowPostModal(false)}>Cancel</button>
-              <button className="btn-post" onClick={handlePost}>Post Job</button>
+              <button className="btn-post" onClick={handlePost} disabled={posting} style={{ opacity: posting ? 0.7 : 1, cursor: posting ? 'not-allowed' : 'pointer' }}>
+  {posting ? (
+    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+      <span style={{
+        width: '16px', height: '16px', border: '2px solid #fff', borderTop: '2px solid transparent',
+        borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite'
+      }} />
+      Processing
+    </span>
+  ) : 'Post Job'}
+</button>
             </div>
           </div>
         </div>

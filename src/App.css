@@ -271,3 +271,6 @@ nav {
 }
 .upload-area:hover { border-color: var(--accent); }
 .upload-area p { margin-top: 0.5rem; font-size: 0.85rem; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

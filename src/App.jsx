@@ -164,7 +164,7 @@ export default function App() {
       image_urls: imageUrls,
       location: form.location || 'Your Area',
       user_id: user?.id,
-      poster_name: profile?.name || null,
+      poster_name: form.name || profile?.name || null,
       bids: 0,
     });
     if (!error) {
@@ -172,7 +172,7 @@ export default function App() {
       setShowPostModal(false);
       setImageFiles([]);
       setImagePreviews([]);
-      setForm({ title: '', category: '', description: '', price: '', location: '' });
+      setForm({ title: '', category: '', description: '', price: '', location: '', name: '' });
     }
   }
 
@@ -411,6 +411,10 @@ export default function App() {
               <label>Location</label>
               <input placeholder="e.g. Salt Lake City, UT" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
             </div>
+            <div className="form-group">
+  <label>Your Name <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span></label>
+  <input type="text" placeholder="e.g. John Smith" value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} />
+</div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowPostModal(false)}>Cancel</button>
               <button className="btn-post" onClick={handlePost}>Post Job</button>

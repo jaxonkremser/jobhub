@@ -237,7 +237,7 @@ export default function App() {
       <div className="hero">
         <h1>FIND LOCAL<br /><span>CONTRACTORS</span></h1>
         <p>Post any home job, get bids from local pros, and get it done.</p>
-        <button className="btn-post" onClick={() => user ? setShowPostModal(true) : setShowAuthModal(true)}>Post Your First Job →</button>
+        <button className="btn-post" onClick={() => user ? setShowPostModal(true) : setShowAuthModal(true)}>Post Your<button className="btn-post" onClick={() => user ? setShowPostModal(true) : setShowAuthModal(true)}>Post a Job →</button> First Job →</button>
       </div>
 
       <div className="filters">

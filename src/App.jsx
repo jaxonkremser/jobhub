@@ -30,6 +30,8 @@ export default function App() {
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
+const [filters, setFilters] = useState({ minPrice: '', maxPrice: '', sortBy: 'newest' });
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -104,8 +106,20 @@ export default function App() {
     fetchMessages(activeConversation.job_id);
   }
 
-  const filtered = activeCategory === 'All' ? jobs : jobs.filter(j => j.category === activeCategory);
-
+const filtered = jobs
+  .filter(j => activeCategory === 'All' || j.category === activeCategory)
+  .filter(j => filters.minPrice === '' || Number(j.price) >= Number(filters.minPrice))
+  .filter(j => filters.maxPrice === '' || Number(j.price) <= Number(filters.maxPrice))
+  .sort((a, b) => {
+    switch (filters.sortBy) {
+      case 'oldest': return new Date(a.created_at) - new Date(b.created_at);
+      case 'price_low': return Number(a.price) - Number(b.price);
+      case 'price_high': return Number(b.price) - Number(a.price);
+      case 'most_bids': return b.bids - a.bids;
+      case 'least_bids': return a.bids - b.bids;
+      default: return new Date(b.created_at) - new Date(a.created_at);
+    }
+  });
   async function handleAuth() {
     setAuthError('');
     setAuthLoading(true);
@@ -241,10 +255,59 @@ export default function App() {
 </div>
 
       <div className="filters">
-        {CATEGORIES.map(cat => (
-          <button key={cat} className={`filter-btn ${activeCategory === cat ? 'active' : ''}`} onClick={() => setActiveCategory(cat)}>{cat}</button>
-        ))}
-      </div>
+  {CATEGORIES.map(cat => (
+    <button key={cat} className={`filter-btn ${activeCategory === cat ? 'active' : ''}`} onClick={() => setActiveCategory(cat)}>{cat}</button>
+  ))}
+  <button className={`filter-btn ${showFilters ? 'active' : ''}`} onClick={() => setShowFilters(!showFilters)}>
+    ⚙️ Filters
+  </button>
+</div>
+
+{showFilters && (
+  <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', padding: '1rem 2rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+    <div>
+      <label style={{ display: 'block', color: 'var(--muted)', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Min Price ($)</label>
+      <input
+        type="number"
+        placeholder="0"
+        value={filters.minPrice}
+        onChange={e => setFilters({...filters, minPrice: e.target.value})}
+        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '0.5rem 0.75rem', borderRadius: '8px', width: '120px', fontFamily: 'DM Sans, sans-serif' }}
+      />
+    </div>
+    <div>
+      <label style={{ display: 'block', color: 'var(--muted)', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Max Price ($)</label>
+      <input
+        type="number"
+        placeholder="Any"
+        value={filters.maxPrice}
+        onChange={e => setFilters({...filters, maxPrice: e.target.value})}
+        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '0.5rem 0.75rem', borderRadius: '8px', width: '120px', fontFamily: 'DM Sans, sans-serif' }}
+      />
+    </div>
+    <div>
+      <label style={{ display: 'block', color: 'var(--muted)', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.4rem' }}>Sort By</label>
+      <select
+        value={filters.sortBy}
+        onChange={e => setFilters({...filters, sortBy: e.target.value})}
+        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '0.5rem 0.75rem', borderRadius: '8px', fontFamily: 'DM Sans, sans-serif', cursor: 'pointer' }}
+      >
+        <option value="newest">Newest</option>
+        <option value="oldest">Oldest</option>
+        <option value="price_low">Price: Low to High</option>
+        <option value="price_high">Price: High to Low</option>
+        <option value="most_bids">Most Bids</option>
+        <option value="least_bids">Least Bids</option>
+      </select>
+    </div>
+    <button
+      onClick={() => setFilters({ minPrice: '', maxPrice: '', sortBy: 'newest' })}
+      style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.85rem' }}
+    >
+      Reset
+    </button>
+  </div>
+)}
 
       <div className="jobs-grid">
         {loading ? (

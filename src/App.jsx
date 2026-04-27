@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
 import './App.css';
 
-const CATEGORIES = ['All', 'Roofing', 'Landscaping', 'Concrete', 'Fencing', 'Flooring', 'Carpentry', 'Plumbing', 'Electrical'];
+const CATEGORIES = ['All', 'Roofing', 'Landscaping', 'Concrete', 'Fencing', 'Flooring', 'Carpentry', 'Plumbing', 'Electrical', 'Other'];
 
 export default function App() {
   const [jobs, setJobs] = useState([]);

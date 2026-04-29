@@ -464,9 +464,23 @@ const filtered = jobs
 
       {/* POST A JOB MODAL */}
       {showPostModal && (
-        <div className="modal-overlay" onClick={() => setShowPostModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>Post a Job</h2>
+  <div className="modal-overlay" onClick={() => !posting && setShowPostModal(false)}>
+    <div className="modal" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
+      {posting && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
+          borderRadius: '20px', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', zIndex: 10
+        }}>
+          <div style={{
+            width: '40px', height: '40px', border: '4px solid #fff',
+            borderTop: '4px solid var(--accent)', borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite', marginBottom: '1rem'
+          }} />
+          <p style={{ color: '#fff', fontWeight: 600 }}>Processing...</p>
+        </div>
+      )}
+      <h2>Post a Job</h2>
             <div className="form-group">
               <label>Job Title</label>
               <input placeholder="e.g. Broken gutter needs repair" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />

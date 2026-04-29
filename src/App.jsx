@@ -161,7 +161,7 @@ const filtered = jobs
   async function handlePost() {
     if (!form.title || !form.price) return;
     setPosting(true);
-    
+        console.log('POSTING SET TO TRUE');
     let imageUrls = [];
     for (const file of imageFiles) {
       const fileName = `${Date.now()}-${file.name}`;
@@ -407,6 +407,10 @@ const filtered = jobs
       {showAuthModal && (
         <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
+              {/* DEBUG */}
+  <p style={{ position: 'absolute', top: 0, right: 0, background: 'red', color: 'white', padding: '2px 8px', fontSize: '12px', zIndex: 1000 }}>
+    posting: {posting ? 'TRUE' : 'FALSE'}
+  </p>
             <h2>{authMode === 'login' ? 'Log In' : 'Sign Up'}</h2>
             {authMode === 'signup' && (
               <div className="form-group">

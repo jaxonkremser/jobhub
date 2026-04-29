@@ -513,15 +513,7 @@ const filtered = jobs
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowPostModal(false)}>Cancel</button>
               <button className="btn-post" onClick={handlePost} disabled={posting} style={{ opacity: posting ? 0.7 : 1, cursor: posting ? 'not-allowed' : 'pointer' }}>
-  {posting ? (
-    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-      <span style={{
-        width: '16px', height: '16px', border: '2px solid #fff', borderTop: '2px solid transparent',
-        borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite'
-      }} />
-      Processing
-    </span>
-  ) : 'Post Job'}
+  {posting ? '⏳ Processing...' : 'Post Job'}
 </button>
             </div>
           </div>

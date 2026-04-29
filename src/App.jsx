@@ -164,32 +164,33 @@ const filtered = jobs
   console.log('posting state set to true');
   let imageUrls = [];
   for (const file of imageFiles) {
-    const fileName = `${Date.now()}-${file.name}`;
-    const { error } = await supabase.storage.from('job-images').upload(fileName, file);
-    if (!error) {
-      const { data } = supabase.storage.from('job-images').getPublicUrl(fileName);
-      imageUrls.push(data.publicUrl);
+      const fileName = `${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from('job-images').upload(fileName, file);
+      if (!error) {
+        const { data } = supabase.storage.from('job-images').getPublicUrl(fileName);
+        imageUrls.push(data.publicUrl);
+      }
     }
-  }
-  const { error } = await supabase.from('jobs').insert({
-    title: form.title,
-    category: form.category || 'General',
-    description: form.description,
-    price: Number(form.price),
-    emoji: '📋',
-    image_url: imageUrls[0] || null,
-    image_urls: imageUrls,
-    location: form.location || 'Your Area',
-    user_id: user?.id,
-    poster_name: profile?.name || null,
-    bids: 0,
-  });
-  if (!error) {
-    fetchJobs();
-    setShowPostModal(false);
-    setImageFiles([]);
-    setImagePreviews([]);
-    setForm({ title: '', category: '', description: '', price: '', location: '' });
+    const { error } = await supabase.from('jobs').insert({
+      title: form.title,
+      category: form.category || 'General',
+      description: form.description,
+      price: Number(form.price),
+      emoji: '📋',
+      image_url: imageUrls[0] || null,
+      image_urls: imageUrls,
+      location: form.location || 'Your Area',
+      user_id: user?.id,
+      poster_name: form.name || profile?.name || null,
+      bids: 0,
+    });
+    if (!error) {
+      fetchJobs();
+      setShowPostModal(false);
+      setImageFiles([]);
+      setImagePreviews([]);
+      setForm({ title: '', category: '', description: '', price: '', location: '', name: '' });
+    }
   }
   setPosting(false);
 }

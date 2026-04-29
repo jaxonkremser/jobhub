@@ -161,6 +161,7 @@ const filtered = jobs
   async function handlePost() {
   if (!form.title || !form.price) return;
   setPosting(true);
+  console.log('posting state set to true');
   let imageUrls = [];
   for (const file of imageFiles) {
     const fileName = `${Date.now()}-${file.name}`;

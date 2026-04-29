@@ -32,7 +32,7 @@ export default function App() {
   const [activeConversation, setActiveConversation] = useState(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
-const [filters, setFilters] = useState({ minPrice: '', maxPrice: '', sortBy: 'newest' });
+  const [filters, setFilters] = useState({ minPrice: '', maxPrice: '', sortBy: 'newest' });
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -159,41 +159,10 @@ const filtered = jobs
   }
 
   async function handlePost() {
-  if (!form.title || !form.price) return;
-  setPosting(true);
-  console.log('posting state set to true');
-  let imageUrls = [];
-  for (const file of imageFiles) {
-      const fileName = `${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from('job-images').upload(fileName, file);
-      if (!error) {
-        const { data } = supabase.storage.from('job-images').getPublicUrl(fileName);
-        imageUrls.push(data.publicUrl);
-      }
-    }
-    const { error } = await supabase.from('jobs').insert({
-      title: form.title,
-      category: form.category || 'General',
-      description: form.description,
-      price: Number(form.price),
-      emoji: '📋',
-      image_url: imageUrls[0] || null,
-      image_urls: imageUrls,
-      location: form.location || 'Your Area',
-      user_id: user?.id,
-      poster_name: form.name || profile?.name || null,
-      bids: 0,
-    });
-    if (!error) {
-      fetchJobs();
-      setShowPostModal(false);
-      setImageFiles([]);
-      setImagePreviews([]);
-      setForm({ title: '', category: '', description: '', price: '', location: '', name: '' });
-    }
-  }
-  setPosting(false);
-}
+    if (!form.title || !form.price) return;
+    setPosting(true);
+    
+    let imageUrls = [];
     for (const file of imageFiles) {
       const fileName = `${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from('job-images').upload(fileName, file);
@@ -202,6 +171,7 @@ const filtered = jobs
         imageUrls.push(data.publicUrl);
       }
     }
+    
     const { error } = await supabase.from('jobs').insert({
       title: form.title,
       category: form.category || 'General',
@@ -215,6 +185,7 @@ const filtered = jobs
       poster_name: form.name || profile?.name || null,
       bids: 0,
     });
+    
     if (!error) {
       fetchJobs();
       setShowPostModal(false);
@@ -222,6 +193,8 @@ const filtered = jobs
       setImagePreviews([]);
       setForm({ title: '', category: '', description: '', price: '', location: '', name: '' });
     }
+    
+    setPosting(false);
   }
 
   function openJobModal(job) {
@@ -468,19 +441,20 @@ const filtered = jobs
   <div className="modal-overlay" onClick={() => !posting && setShowPostModal(false)}>
     <div className="modal" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
       {posting && (
-        <div style={{
-          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
-          borderRadius: '20px', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', zIndex: 10
-        }}>
-          <div style={{
-            width: '40px', height: '40px', border: '4px solid #fff',
-            borderTop: '4px solid var(--accent)', borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite', marginBottom: '1rem'
-          }} />
-          <p style={{ color: '#fff', fontWeight: 600 }}>Processing...</p>
-        </div>
-      )}
+  <div style={{
+    position: 'absolute', inset: 0, background: 'rgba(15,17,23,0.9)',
+    borderRadius: '20px', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', zIndex: 999
+  }}>
+    <div style={{
+      width: '48px', height: '48px', border: '4px solid var(--border)',
+      borderTop: '4px solid var(--accent)', borderRadius: '50%',
+      animation: 'spin 0.8s linear infinite', marginBottom: '1rem'
+    }} />
+    <p style={{ color: '#fff', fontWeight: 600, fontSize: '1rem' }}>Posting your job...</p>
+    <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>Uploading images and saving</p>
+  </div>
+)}
       <h2>Post a Job</h2>
             <div className="form-group">
               <label>Job Title</label>

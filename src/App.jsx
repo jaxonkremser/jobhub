@@ -194,6 +194,9 @@ const filtered = jobs
       setForm({ title: '', category: '', description: '', price: '', location: '', name: '' });
     }
     
+    // Keep loader visible for at least 1.5 seconds so users see it
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
     setPosting(false);
   }
 
